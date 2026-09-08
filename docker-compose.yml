@@ -1,0 +1,22 @@
+services:
+  lucida-api:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      CHROME_NO_SANDBOX: "true"
+      # CF_CLEARANCE / USER_AGENT: set both to skip the browser and use a hand-pasted cookie
+    env_file:
+      - path: .env
+        required: false
+    # Chromium is unhappy with the default 64MB /dev/shm.
+    shm_size: "1gb"
+    volumes:
+      # persist the downloaded Chromium so it isn't re-fetched on every recreate
+      - cloak-cache:/home/node/.cloakbrowser
+    restart: unless-stopped
+
+volumes:
+  cloak-cache:
