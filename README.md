@@ -10,7 +10,16 @@ generate the OpenAPI document.
 
 ## running
 
+The whole stack, API plus challenge solver:
+
 ```
+docker compose up -d
+```
+
+Or run the API directly, with a solver of your own alongside it:
+
+```
+docker run -d -p 8191:8191 --shm-size=2gb ghcr.io/thephaseless/byparr
 npm install
 npm run dev        # node --watch src/server.ts
 npm run build && npm start
@@ -22,28 +31,33 @@ Environment:
 | ----------------------- | ----------- | -------------------------------------------------------------- |
 | `PORT`                  | `3000`      | listen port                                                    |
 | `HOST`                  | `127.0.0.1` | listen address                                                 |
-| `CHROME_NO_SANDBOX`     | —           | launch Chromium with `--no-sandbox` (needed in Docker)         |
-| `CLEARANCE_TIMEOUT_MS`  | `60000`     | how long to wait for Cloudflare to issue the cookie            |
-| `CF_CLEARANCE`          | —           | escape hatch: use a hand-copied cookie instead of a browser    |
-| `USER_AGENT`            | —           | the `User-Agent` that hand-copied cookie was issued to         |
+| `SOLVER_URL`            | `http://127.0.0.1:8191` | where the challenge solver listens                 |
+| `CLEARANCE_TIMEOUT_MS`  | `60000`     | how long the solver may spend clearing the challenge           |
+| `CF_CLEARANCE`          | —           | escape hatch: use a cookie of your own instead of the solver   |
+| `USER_AGENT`            | —           | the `User-Agent` that cookie was issued to                     |
 
 ## the captcha
 
-Cloudflare guards lucida.to, so on boot the server launches a stealth Chromium
-via [cloakbrowser](https://www.npmjs.com/package/cloakbrowser), points it at
-lucida.to, and waits for the `cf_clearance` cookie to appear. That cookie and
-the browser's User-Agent are then attached to every plain HTTP request the API
-makes — the browser stays parked so it can re-solve on demand.
+Cloudflare guards lucida.to, so on boot the server asks
+[Byparr](https://github.com/ThePhaseless/Byparr) to fetch lucida.to and hand
+back the `cf_clearance` cookie it was issued. That cookie and the solver's
+User-Agent are then attached to every plain HTTP request the API makes.
+
+Byparr drives a stealth Firefox ([Camoufox](https://github.com/daijro/camoufox))
+and speaks the FlareSolverr API, so any drop-in replacement works — point
+`SOLVER_URL` at it instead. The engine matters: Chromium-based solvers clear
+this challenge on a desktop but not from inside a container, whereas the Firefox
+engine clears it in both.
 
 A `cf_clearance` cookie is bound to the User-Agent it was issued to, so the two
-always travel together. It is also `HttpOnly`, which is why the session reads it
-off the browser context rather than `document.cookie`.
+always travel together.
 
-Any request that comes back 403 means the clearance went stale: the session
-re-solves the challenge once and retries automatically.
+Any request that comes back 403 means the clearance went stale: the session asks
+for a fresh solve once and retries automatically. Concurrent callers share a
+single in-flight solve rather than each starting their own.
 
-Setting **both** `CF_CLEARANCE` and `USER_AGENT` skips the browser entirely and
-uses those values instead, which is useful if you would rather not run Chromium.
+Setting **both** `CF_CLEARANCE` and `USER_AGENT` skips the solver entirely and
+uses those values instead.
 
 ## docs
 
@@ -165,6 +179,6 @@ it a lot:
 - a page payload that will not parse is retried like any other transient
   page error rather than surfacing as a 500
 - disconnecting the client aborts the upstream lucida requests
-- the Cloudflare challenge is solved by a browser at boot instead of asking you
-  to paste a cookie in by hand
+- the Cloudflare challenge is solved by a browser at boot, in a sidecar
+  container, instead of asking you to paste a cookie in by hand
 - an unrecognised audio MIME type is a 502 rather than a panic

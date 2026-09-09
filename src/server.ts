@@ -25,7 +25,7 @@ const manualClearance = hasManualClearance();
 if (manualClearance) {
   app.log.info('using CF_CLEARANCE and USER_AGENT from the environment');
 } else {
-  app.log.info('launching stealth browser to solve the lucida challenge');
+  app.log.info('asking the solver to clear the lucida challenge');
   const session = await new LucidaSession().start();
   useSession(session);
   app.addHook('onClose', () => session.close());

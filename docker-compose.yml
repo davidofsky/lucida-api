@@ -1,4 +1,24 @@
 services:
+  # Drives a stealth Firefox through Cloudflare's challenge and hands back the
+  # cf_clearance cookie. Speaks the FlareSolverr API, so a drop-in replacement
+  # works too — point SOLVER_URL at it instead.
+  byparr:
+    image: ghcr.io/thephaseless/byparr:latest
+    # Firefox is unhappy with the default 64MB /dev/shm.
+    shm_size: "2gb"
+    # The image ships a healthcheck on a 15 minute interval, which is far too
+    # coarse to gate startup on; this one is the same probe, polled properly.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8191/health || exit 1"]
+      interval: 10s
+      timeout: 10s
+      start_period: 30s
+      retries: 12
+    # Uncomment to poke the solver directly while debugging.
+    # ports:
+    #   - "8191:8191"
+    restart: unless-stopped
+
   lucida-api:
     build: .
     ports:
@@ -6,17 +26,14 @@ services:
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
-      CHROME_NO_SANDBOX: "true"
-      # CF_CLEARANCE / USER_AGENT: set both to skip the browser and use a hand-pasted cookie
+      SOLVER_URL: http://byparr:8191
+      # CF_CLEARANCE / USER_AGENT: set both to skip the solver and use a cookie of your own
     env_file:
       - path: .env
         required: false
-    # Chromium is unhappy with the default 64MB /dev/shm.
-    shm_size: "1gb"
-    volumes:
-      # persist the downloaded Chromium so it isn't re-fetched on every recreate
-      - cloak-cache:/home/node/.cloakbrowser
+    # The server solves the challenge during boot, so the solver has to be
+    # answering before it starts or the first attempt fails.
+    depends_on:
+      byparr:
+        condition: service_healthy
     restart: unless-stopped
-
-volumes:
-  cloak-cache:
