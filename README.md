@@ -142,6 +142,17 @@ one), and a `Content-Disposition` filename matching the downloader's naming
 This endpoint takes an Amazon Music **track** URL, the kind `/search` returns;
 an album or playlist URL returns 400.
 
+A transfer that dies halfway is picked back up rather than failing. lucida's
+servers close the connection mid-file often enough on a long track that the
+client would otherwise see a truncated body, and the handoff cannot be re-read:
+it 404s the moment its download connection ends. So the track is re-ripped and
+`Range` fast-forwards the new transfer to the byte the old one reached. Two rips
+of the same track are byte-identical; the last 64KB already sent is re-fetched
+and compared against the new one, and a mismatch fails the request instead of
+stitching a corrupt file. The client sees one continuous response the whole
+time, just with a pause in it while the re-rip happens. Three resumes per
+request, after which the failure is passed on.
+
 Query parameters:
 
 | parameter  | default    | purpose                                                     |
@@ -178,6 +189,8 @@ it a lot:
   fetch all mean "ask lucida for a new handoff", not "give up"
 - a page payload that will not parse is retried like any other transient
   page error rather than surfacing as a 500
+- a transfer dropped mid-file is resumed against a fresh rip with `Range`, so
+  the client gets a whole file rather than a truncated one
 - disconnecting the client aborts the upstream lucida requests
 - the Cloudflare challenge is solved by a browser at boot, in a sidecar
   container, instead of asking you to paste a cookie in by hand
