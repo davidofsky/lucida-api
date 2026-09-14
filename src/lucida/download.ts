@@ -10,7 +10,6 @@ import {
   RESUME_OVERLAP_BYTES,
   RETRY_DELAY_MS,
   STATUS_POLL_INTERVAL_MS,
-  STUCK_TIMEOUT_MS,
 } from './constants.ts';
 import type { DownloadConfig, Track, TrackDownload, TrackDownloadStatus } from './types.ts';
 
@@ -74,14 +73,19 @@ async function requestTrackDownload(
  * Returns `retry` instead of throwing when a handoff goes bad. lucida drops
  * handoffs that stop making progress — the status endpoint starts 404ing — and
  * the only way forward is to ask for a fresh one.
+ *
+ * That 404 is the only reliable sign a handoff is dead. The status payload is
+ * just `{status, message}` with no progress in it, and a phase sits on one
+ * fixed message for as long as it runs — `ripping` alone holds
+ * "Ripping {item}..." for a minute on a full-length FLAC. So a status that
+ * stops changing means nothing, and treating it as a wedge only throws away
+ * handoffs that were working. The overall deadline is the backstop instead.
  */
 async function waitUntilReady(
   download: TrackDownload,
   deadline: number,
   signal: AbortSignal,
 ): Promise<'ready' | 'retry'> {
-  let last = { status: '', message: '', since: Date.now() };
-
   while (true) {
     const response = await request(
       handoffUrl(download),
@@ -95,12 +99,6 @@ async function waitUntilReady(
       const status = (await response.json().catch(() => null)) as TrackDownloadStatus | null;
 
       if (status?.status === 'completed') return 'ready';
-
-      if (status !== null && (status.status !== last.status || status.message !== last.message)) {
-        last = { status: status.status, message: status.message, since: Date.now() };
-      } else if (Date.now() - last.since >= STUCK_TIMEOUT_MS) {
-        return 'retry';
-      }
     }
 
     if (Date.now() >= deadline) {

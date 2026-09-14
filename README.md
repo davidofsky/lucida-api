@@ -185,8 +185,10 @@ it a lot:
 - retries are bounded (5 attempts; 5min cap on preparing a track) instead of
   looping forever, so a request always terminates. Otherwise the retry
   behaviour matches the downloader's `'request_track_download` loop: a dropped
-  handoff (404/500), a status that stops changing for 30s, or a failed audio
-  fetch all mean "ask lucida for a new handoff", not "give up"
+  handoff (404/500) or a failed audio fetch means "ask lucida for a new
+  handoff", not "give up". A status that stops changing is *not* treated as a
+  wedge — lucida reports no progress, and `ripping` holds one fixed message for
+  as long as the rip takes, so the 5min cap is the only time-based backstop
 - a page payload that will not parse is retried like any other transient
   page error rather than surfacing as a 500
 - a transfer dropped mid-file is resumed against a fresh rip with `Range`, so

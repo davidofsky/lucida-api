@@ -13,8 +13,6 @@ export const MAX_ATTEMPTS = 5;
 export const PROCESSING_TIMEOUT_MS = 300_000;
 export const STATUS_POLL_INTERVAL_MS = 1000;
 
-// How long an unchanging status may sit before the handoff is written off. 
-export const STUCK_TIMEOUT_MS = 30_000;
 export const PREPARE_ATTEMPTS = 5;
 
 // A transfer that dies mid-body is resumed by re-ripping the track and asking
