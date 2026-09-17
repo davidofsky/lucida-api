@@ -2,8 +2,8 @@
 
 A small Fastify + TypeScript HTTP API that does what
 [`lucida-downloader`](https://github.com/jelni/lucida-downloader) does, but streams the audio back over
-HTTP instead of writing it to disk. Amazon Music only: search for a track by
-artist and title, then stream it.
+HTTP instead of writing it to disk. Amazon Music only: give it a track URL and
+it streams the audio back.
 
 Requests are validated with [zod](https://zod.dev), and the same schemas
 generate the OpenAPI document.
@@ -71,66 +71,21 @@ at `/docs/json`.
 Returns `{"status": "available" | "captcha" | "unavailable"}`. `captcha` means
 the clearance cookie is not working — check the startup logs.
 
-### `GET /search?artist=<artist>&track=<title>`
+### `GET /search`
 
-Finds tracks on Amazon Music and returns up to five, most likely first, so you
-can pick between an album version, a live take and a radio edit rather than
-having one guessed for you. Both parameters are required:
+**Temporarily disabled.** Answers 503:
 
 ```json
-[
-  {
-    "id": "B0FM5VWYKJ",
-    "title": "Timeland",
-    "artist": "King Gizzard & The Lizard Wizard",
-    "url": "https://music.amazon.com/tracks/B0FM5VWYKJ"
-  }
-]
+{ "error": "search is temporarily disabled; pass a track URL to /download instead" }
 ```
 
-Any `url` goes straight into `/download`. Tracks only. The same
-recording appears under several releases with different ids, so results are
-collapsed on title and artist — genuine variants stay as separate choices. A query with
-no hits on the US marketplace is retried across the other Amazon marketplaces,
-whose catalogue indexes differ, before returning 404.
+Amazon stopped issuing anonymous catalogue tokens, so querying its catalogue
+directly now answers every search with a "Service error". Searching through
+lucida instead worked, but capped at ten results per query and went down often
+enough that it was not worth keeping. The endpoint stays registered so callers
+get a clear answer rather than a 404 to interpret.
 
-Amazon ranks its own results by artist relevance and largely ignores the title,
-so a search tends to return that artist's most popular track rather than the one
-asked for — the requested song is often several places down the list. Results
-are therefore re-scored locally, matching each parameter against the field it
-belongs to. Keeping the two apart is what stops a `"<title> (<artist> Cover)"`
-by somebody else from outranking the original, since a cover puts the real
-artist's name in its own title. A result sharing no word with `track` is
-rejected outright rather than returned as a near-miss.
-
-**Both sides must match, or nothing is returned.** A result qualifies only when
-every word of `track` appears in its title and every identifying word of
-`artist` appears in its artist — a near-miss is discarded rather than handed
-back. Two things this rules out: Amazon answers a query it cannot satisfy with
-the artist's most popular songs, and sharing one generic word is not the same
-act, so `artist=Daft Punk` will not match "Piano Punk". Leading articles are
-ignored, so `The Beatles` still matches "Beatles".
-
-When the combined search finds nothing, the title is searched on its own —
-pairing the two can drown it, and `artist=Daft Punk&track=Musique` returns Daft
-Punk's ten best-known songs, none of them "Musique", while the title alone finds
-it first. The same both-sides rule applies to that pass.
-
-A `feat.` / `ft.` / `featuring` credit in `track` is matched against **either**
-field, because releases file it under either one: Amazon lists "Coming up Low"
-with its guests in the artist rather than the title, so requiring them in the
-title would never match. The title proper still has to be in the title.
-
-Accents are folded before comparison, so `Bjork` matches "Björk" and
-`Motorhead` matches "Motörhead", on both sides of the comparison.
-
-Titles advertising a different *kind* of recording — live, commentary, karaoke,
-radio edit, remix and so on — are demoted, because those carry the real title
-and the real artist and nothing else in the score tells them apart. Searching
-King Crimson's "21st Century Schizoid Man" returns ten variants and no plain
-studio version, and the spoken-word commentary track has the tidiest title of
-them all. Markers named in `track` are not penalised, so asking for
-`track=21st Century Schizoid Man (Live)` still gets the live take.
+Find the track URL yourself and pass it to `/download`.
 
 ### `GET /download?url=<amazon track url>`
 
@@ -139,8 +94,8 @@ pipes the audio through with `Content-Type`, `Content-Length` (when lucida sends
 one), and a `Content-Disposition` filename matching the downloader's naming
 (`Artist - Title.flac`). Nothing is buffered or written to disk.
 
-This endpoint takes an Amazon Music **track** URL, the kind `/search` returns;
-an album or playlist URL returns 400.
+This endpoint takes an Amazon Music **track** URL; an album or playlist URL
+returns 400.
 
 A transfer that dies halfway is picked back up rather than failing. lucida's
 servers close the connection mid-file often enough on a long track that the

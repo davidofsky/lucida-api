@@ -40,7 +40,7 @@ export async function registerDocs(app: FastifyInstance): Promise<void> {
         version: '1.0.0',
       },
       tags: [
-        { name: 'lucida', description: 'searching and downloading' },
+        { name: 'lucida', description: 'downloading' },
         { name: 'meta', description: 'service health' },
       ],
     },

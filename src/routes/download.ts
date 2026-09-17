@@ -17,7 +17,7 @@ export const downloadRoutes: FastifyPluginAsyncZod = async (app) => {
         summary: 'Stream a single track',
         description:
           `Resolves the track, asks lucida to prepare it, then pipes the audio through with a 'Content-Disposition' filename. 
-          Takes **track** URLs only. You can get this url using /search.`,
+          Takes **track** URLs only.`,
         querystring: QuerySchema,
         response: {
           200: AudioSchema,
