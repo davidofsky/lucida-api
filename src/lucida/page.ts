@@ -2,7 +2,7 @@ import JSON5 from 'json5';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 import { LucidaError, request } from './client.ts';
-import { BASE_URL, MAX_ATTEMPTS, RETRY_DELAY_MS, TRANSIENT_PAGE_ERRORS } from './constants.ts';
+import { BASE_URL, MAX_ATTEMPTS, retryDelayMs, TRANSIENT_PAGE_ERRORS } from './constants.ts';
 import { parseEnclosedValue } from './text.ts';
 import type { PageData, Track } from './types.ts';
 
@@ -47,7 +47,7 @@ export async function resolvePage(
       throw new LucidaError(error, 502);
     }
 
-    await sleep(RETRY_DELAY_MS, undefined, { signal });
+    await sleep(retryDelayMs(attempt), undefined, { signal });
   }
 }
 

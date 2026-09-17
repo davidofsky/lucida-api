@@ -10,6 +10,11 @@ const BOOLEAN_META = { type: 'string', enum: ['true', 'false'] } as const;
 export const QuerySchema = z.object({
   url: z.url().describe('an Amazon Music track URL, as returned by /search'),
   country: z.string().min(1).default('auto').describe('country to use lucida accounts from'),
+  server: z
+    .string()
+    .min(1)
+    .optional()
+    .describe('pin the rip to one of lucida\'s servers (e.g. `maus`); otherwise lucida picks'),
   metadata: z
     .stringbool()
     .default(true)
@@ -32,3 +37,21 @@ export const HealthSchema = z.object({
 export const AudioSchema = z
   .string()
   .meta({ format: 'binary', description: 'the track audio (FLAC, MP3, M4A, or Opus)' });
+
+/** Query parameters for the search endpoint. */
+export const SearchQuerySchema = z.object({
+  artist: z.string().min(1).describe('performing artist, e.g. "Radiohead"'),
+  track: z.string().min(1).describe('song title, e.g. "Weird Fishes"'),
+});
+
+export const TrackMatchSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  artist: z.string(),
+  url: z.string().describe('pass this to /download'),
+});
+
+export type TrackMatch = z.infer<typeof TrackMatchSchema>;
+
+/** Up to five candidates, most likely first. */
+export const TrackMatchesSchema = z.array(TrackMatchSchema);

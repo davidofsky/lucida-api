@@ -159,6 +159,7 @@ Query parameters:
 | ---------- | ---------- | ----------------------------------------------------------- |
 | `country`  | `auto`     | country to use lucida accounts from                         |
 | `metadata` | `true`     | let lucida embed metadata in the file                       |
+| `server`   | —          | pin the rip to one lucida server (e.g. `maus`)              |
 | `private`  | `false`    | hide the track from lucida's recent downloads               |
 
 Booleans accept `true`/`false`, `1`/`0`, `yes`/`no`, and `on`/`off`. An invalid

@@ -1,8 +1,8 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 
-import { SearchQuerySchema, TrackMatchesSchema } from '../amazon/schemas.ts';
-import { searchTracks } from '../amazon/search.ts';
 import { signalOf } from '../http.ts';
+import { SearchQuerySchema, TrackMatchesSchema } from '../lucida/schemas.ts';
+import { searchTracks } from '../lucida/search.ts';
 import { ErrorSchema } from '../schemas.ts';
 
 export const searchRoutes: FastifyPluginAsyncZod = async (app) => {

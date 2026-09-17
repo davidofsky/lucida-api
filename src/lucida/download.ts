@@ -8,23 +8,42 @@ import {
   PROCESSING_TIMEOUT_MS,
   RESUME_ATTEMPTS,
   RESUME_OVERLAP_BYTES,
-  RETRY_DELAY_MS,
+  retryDelayMs,
   STATUS_POLL_INTERVAL_MS,
 } from './constants.ts';
 import type { DownloadConfig, Track, TrackDownload, TrackDownloadStatus } from './types.ts';
 
+/** Just the part of fastify's logger this module uses. */
+export interface Logger {
+  info(payload: Record<string, unknown>, message: string): void;
+}
+
 /** lucida hands each download to one of its servers, addressed by subdomain. */
 const handoffUrl = (download: TrackDownload): string =>
   `https://${download.server}.lucida.to/api/fetch/request/${download.handoff}`;
+
+/**
+ * The same status, fetched through lucida.to instead of the server directly.
+ * lucida's own page polls both once a second, and a handoff nobody asks for
+ * through the front door is liable to be dropped, so this mirrors it.
+ */
+const proxiedHandoffUrl = (download: TrackDownload): string =>
+  `${BASE_URL}api/load?url=${encodeURIComponent(`/api/fetch/request/${download.handoff}`)}` +
+  `&force=${download.server}`;
 
 async function requestTrackDownload(
   track: Track,
   tokenExpiry: number,
   config: DownloadConfig,
   signal: AbortSignal,
+  log: Logger,
 ): Promise<TrackDownload> {
   for (let attempt = 1; ; attempt++) {
-    const response = await request(`${BASE_URL}api/load?url=%2Fapi%2Ffetch%2Fstream%2Fv2`, {
+    const loadUrl =
+      `${BASE_URL}api/load?url=%2Fapi%2Ffetch%2Fstream%2Fv2` +
+      (config.server === undefined ? '' : `&force=${encodeURIComponent(config.server)}`);
+
+    const response = await request(loadUrl, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -51,6 +70,7 @@ async function requestTrackDownload(
       const body = (await response.json()) as TrackDownload | { error: string };
 
       if ('handoff' in body) {
+        log.info({ server: body.server, attempt }, 'lucida handed the rip to a server');
         return body;
       }
 
@@ -63,7 +83,8 @@ async function requestTrackDownload(
       throw new LucidaError(error, 502);
     }
 
-    await sleep(RETRY_DELAY_MS, undefined, { signal });
+    log.info({ attempt, error }, 'lucida refused the download request; retrying');
+    await sleep(retryDelayMs(attempt), undefined, { signal });
   }
 }
 
@@ -85,20 +106,37 @@ async function waitUntilReady(
   download: TrackDownload,
   deadline: number,
   signal: AbortSignal,
+  log: Logger,
 ): Promise<'ready' | 'retry'> {
+  const started = Date.now();
+  let seen = '';
   while (true) {
-    const response = await request(
-      handoffUrl(download),
-      { signal },
-    );
+    const [response] = await Promise.all([
+      request(handoffUrl(download), { signal }),
+      // Kept alive alongside the direct poll; its body is of no interest here.
+      request(proxiedHandoffUrl(download), { signal })
+        .then((proxied) => proxied.text())
+        .catch(() => undefined),
+    ]);
 
     // lucida garbage-collects handoffs it has given up on
-    if (response.status === 404 || response.status === 500) return 'retry';
+    if (response.status === 404 || response.status === 500) {
+      log.info({ status: response.status }, 'lucida dropped the handoff; asking for another');
+      return 'retry';
+    }
 
     if (response.ok) {
       const status = (await response.json().catch(() => null)) as TrackDownloadStatus | null;
 
-      if (status?.status === 'completed') return 'ready';
+      if (status?.status === 'completed') {
+        log.info({ ms: Date.now() - started }, 'lucida finished preparing the track');
+        return 'ready';
+      }
+
+      if (status !== null && status.status !== seen) {
+        seen = status.status;
+        log.info({ phase: status.status, ms: Date.now() - started }, 'lucida is preparing the track');
+      }
     }
 
     if (Date.now() >= deadline) {
@@ -123,15 +161,20 @@ export async function streamTrack(
   tokenExpiry: number,
   config: DownloadConfig,
   signal: AbortSignal,
+  log: Logger,
 ): Promise<TrackStream> {
-  const stream = await prepareStream(track, tokenExpiry, config, signal, 0);
+  const stream = await prepareStream(track, tokenExpiry, config, signal, 0, log);
 
   return {
     mimeType: stream.mimeType,
     extension: stream.extension,
     // The client is told the size of the whole file, not of this first transfer.
     contentLength: stream.total === null ? null : String(stream.total),
-    body: resumingBody(stream, (offset) => prepareStream(track, tokenExpiry, config, signal, offset), signal),
+    body: resumingBody(
+      stream,
+      (offset) => prepareStream(track, tokenExpiry, config, signal, offset, log),
+      signal,
+    ),
   };
 }
 
@@ -146,13 +189,14 @@ async function prepareStream(
   config: DownloadConfig,
   signal: AbortSignal,
   offset: number,
+  log: Logger,
 ): Promise<OpenStream> {
   const deadline = Date.now() + PROCESSING_TIMEOUT_MS;
 
   for (let attempt = 1; attempt <= PREPARE_ATTEMPTS; attempt++) {
-    const download = await requestTrackDownload(track, tokenExpiry, config, signal);
+    const download = await requestTrackDownload(track, tokenExpiry, config, signal, log);
 
-    if ((await waitUntilReady(download, deadline, signal)) === 'ready') {
+    if ((await waitUntilReady(download, deadline, signal, log)) === 'ready') {
       const stream = await openTrackStream(download, deadline, signal, offset);
 
       if (stream !== null) return stream;
@@ -341,7 +385,7 @@ async function openTrackStream(
   signal: AbortSignal,
   offset: number,
 ): Promise<OpenStream | null> {
-  while (true) {
+  for (let attempt = 1; ; attempt++) {
     const response = await request(
       `${handoffUrl(download)}/download`,
       offset > 0 ? { headers: { range: `bytes=${offset}-` }, signal } : { signal },
@@ -373,7 +417,7 @@ async function openTrackStream(
       throw new LucidaError(`lucida returned ${response.status} when downloading the track`, 502);
     }
 
-    await sleep(RETRY_DELAY_MS, undefined, { signal });
+    await sleep(retryDelayMs(attempt), undefined, { signal });
   }
 }
 

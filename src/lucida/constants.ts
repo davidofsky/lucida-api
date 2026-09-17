@@ -6,8 +6,16 @@ export const TRANSIENT_PAGE_ERRORS = [
   'An error occurred. Had an issue getting that item, try again.',
 ];
 
-export const RETRY_DELAY_MS = 5000;
 export const MAX_ATTEMPTS = 5;
+
+/**
+ * A rejected load or an unparsable page is usually a one-off from whichever
+ * lucida server answered — the same request typically succeeds straight after —
+ * so the first retry goes out almost immediately and only repeats back off.
+ */
+const RETRY_DELAYS_MS = [500, 2000, 5000, 5000];
+
+export const retryDelayMs = (attempt: number): number => RETRY_DELAYS_MS[attempt - 1] ?? 5000;
 
 // Overall budget for getting a track prepared, across every attempt.
 export const PROCESSING_TIMEOUT_MS = 300_000;

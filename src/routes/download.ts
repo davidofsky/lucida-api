@@ -34,7 +34,13 @@ export const downloadRoutes: FastifyPluginAsyncZod = async (app) => {
       const pageData = await resolvePage(request.query.url, request.query.country, signal);
       const track = trackFromPage(pageData);
 
-      const stream = await streamTrack(track, pageData.tokenExpiry, request.query, signal);
+      const stream = await streamTrack(
+        track,
+        pageData.tokenExpiry,
+        request.query,
+        signal,
+        request.log,
+      );
       const fileName = `${formatTrackStem(track, undefined, 1)}.${stream.extension}`;
 
       reply.header('content-type', stream.mimeType);
